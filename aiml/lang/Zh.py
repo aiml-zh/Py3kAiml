@@ -6,6 +6,7 @@
 Initialize JieBa word segmenter. JieBa need the absoulte path of dictionary!!!
 '''
 import jieba
+import re
 import os.path
 
 mod_dir = os.path.dirname(__file__)
@@ -126,35 +127,12 @@ def splitUnicode(s):
     return result
 
 def mergeChineseSpace(s):
-    # assert type(s) == unicode, "string must be a unicode"
-    #print("[中文字] LangSupport::mergeChineseSpace() input = ",s)
-    segs = splitChinese(s)
-    #print("[中文字] LangSupport::mergeChineseSpace() segs = ",segs)
-    # result = []
-    # for seg in segs:
-    #     # English marks
-    #     if seg[0] not in ".,?!":
-    #         print("[中文字] LangSupport::mergeChineseSpace() seg[0] =", seg[0])    
-    #         try:
-    #             str(seg[0]) and result.append(" ")
-    #         except:
-    #             pass
-    #     result.append(seg)
-    #     print("[中文字] LangSupport::mergeChineseSpace() result =", result)
-    #     try:
-    #         str(seg[-1]) and result.append(" ")
-    #     except:
-    #         pass
-    # ---- cross-language processing ----
-    # 2015.0817 added by Liang
-    lsCrossLang = []
-    for c in segs:
-        if isChinese(c[0]):
-            lsCrossLang.append(c)
-        else:
-            lsCrossLang.append(" ")
-            lsCrossLang.append(c)
-    return ''.join(lsCrossLang).strip()
+    marked = ''.join((' __CH__' + i + '__CH__ ' if isChinese(i) else i for i in s))
+    marked = re.sub(r'__CH__\s+__CH__', '', marked)
+    marked = re.sub(r'\s*__CH__\s*', ' ', marked)
+    #marked = re.sub(r'__CH__\s+', ' ', marked)
+    return marked.strip()
+
 
 preprocess = lambda *args, **kwargs: ' '.join(splitChinese(*args, **kwargs))
 postprocess = lambda *args, **kwargs: mergeChineseSpace(*args, **kwargs)
