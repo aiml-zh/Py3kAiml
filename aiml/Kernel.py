@@ -17,6 +17,7 @@ import sys
 import time
 import threading
 import xml.sax
+import importlib
 
 
 class Kernel:
@@ -85,6 +86,8 @@ class Kernel:
             "uppercase":    self._processUppercase,
             "version":      self._processVersion,
         }
+
+        self._langProcessors = []
 
     def bootstrap(self, brainFile = None, learnFiles = [], commands = []):
         """Prepare a Kernel object for use.
@@ -297,6 +300,24 @@ class Kernel:
             if self._verboseMode:
                 print("done (%.2f seconds)" % (time.clock() - start))
 
+    def setLangProcessor(self, lang):
+        module = importlib.import_module('.lang.' + lang, package=__package__)
+        self._langProcessors.append(module)
+
+    def inputLangPreprocess(self, inpt):
+        ret = inpt
+        for i in self._langProcessors:
+            ret = i.preprocess(ret)
+        print(type(ret))
+        print(ret)
+        return ret
+
+    def respondLangPostprocess(self, inpt):
+        ret = inpt
+        for i in self._langProcessors:
+            ret = i.postprocess(ret)
+        return ret
+
     def respond(self, inpt, sessionID = _globalSessionID):
         """Return the Kernel's response to the input string."""
         if len(inpt) == 0:
@@ -318,6 +339,9 @@ class Kernel:
         sentences = Utils.sentences(inpt)
         finalResponse = ""
         for s in sentences:
+            # language preprocess
+            s = self.inputLangPreprocess(s)
+
             # Add the input to the history list before fetching the
             # response, so that <input/> tags work properly.
             inputHistory = self.getPredicate(self._inputHistory, sessionID)
@@ -336,6 +360,7 @@ class Kernel:
                 outputHistory.pop(0)
             self.setPredicate(self._outputHistory, outputHistory, sessionID)
 
+            response = self.respondLangPostprocess(response)
             # append this response to the final response.
             finalResponse += (response + "  ")
         finalResponse = finalResponse.strip()
@@ -791,6 +816,7 @@ class Kernel:
             words = response.split(" ", 1)
             words[0] = words[0].capitalize()
             response = " ".join(words)
+            #XXX response = words.join()
             return response
         except IndexError: # response was empty
             return ""
