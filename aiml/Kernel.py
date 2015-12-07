@@ -31,6 +31,7 @@ class Kernel:
     _inputStack = "_inputStack"         # Should always be empty in between calls to respond()
 
     def __init__(self):
+        self._langProcessors = []
         self._verboseMode = True
         self._version = "PyAIML 0.8.6"
         self._brain = PatternMgr()
@@ -87,7 +88,6 @@ class Kernel:
             "version":      self._processVersion,
         }
 
-        self._langProcessors = []
 
     def bootstrap(self, brainFile = None, learnFiles = [], commands = []):
         """Prepare a Kernel object for use.
@@ -295,6 +295,7 @@ class Kernel:
                 continue
             # store the pattern/template pairs in the PatternMgr.
             for key,tem in list(handler.categories.items()):
+                key = self.patternLangPreprocess(key)
                 self._brain.add(key,tem)
             # Parsing was successful.
             if self._verboseMode:
@@ -306,17 +307,23 @@ class Kernel:
 
     def inputLangPreprocess(self, inpt):
         ret = inpt
-        for i in self._langProcessors:
-            ret = i.preprocess(ret)
-        print(type(ret))
-        print(ret)
+        for lang in self._langProcessors:
+            ret = lang.preprocess(ret)
         return ret
 
     def respondLangPostprocess(self, inpt):
         ret = inpt
-        for i in self._langProcessors:
-            ret = i.postprocess(ret)
+        for lang in self._langProcessors:
+            ret = lang.postprocess(ret)
         return ret
+
+    def patternLangPreprocess(self, key):
+        ret_key = key
+        print(ret_key)
+        for lang in self._langProcessors:
+            ret_key = tuple(lang.patternPreprocess(i) for i in ret_key)
+        print(ret_key)
+        return ret_key
 
     def respond(self, inpt, sessionID = _globalSessionID):
         """Return the Kernel's response to the input string."""
@@ -341,6 +348,7 @@ class Kernel:
         for s in sentences:
             # language preprocess
             s = self.inputLangPreprocess(s)
+            print(s)
 
             # Add the input to the history list before fetching the
             # response, so that <input/> tags work properly.
@@ -352,15 +360,19 @@ class Kernel:
             
             # Fetch the response
             response = self._respond(s, sessionID)
+            print(response)
+            response = self.respondLangPostprocess(response)
+            print(response)
+            that_pattern = self.patternLangPreprocess((response,'', ''))[0]
+            print('that is ' + that_pattern)
 
             # add the data from this exchange to the history lists
             outputHistory = self.getPredicate(self._outputHistory, sessionID)
-            outputHistory.append(response)
+            outputHistory.append(that_pattern)
             while len(outputHistory) > self._maxHistorySize:
                 outputHistory.pop(0)
             self.setPredicate(self._outputHistory, outputHistory, sessionID)
 
-            response = self.respondLangPostprocess(response)
             # append this response to the final response.
             finalResponse += (response + "  ")
         finalResponse = finalResponse.strip()

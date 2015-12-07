@@ -6,12 +6,27 @@
 Initialize JieBa word segmenter. JieBa need the absoulte path of dictionary!!!
 '''
 import jieba
+import jieba.posseg as pseg
 import re
 import os.path
 
 mod_dir = os.path.dirname(__file__)
 if os.path.exists(os.path.join(mod_dir, 'Zh.dict.txt')):
     jieba.set_dictionary(os.path.join(mod_dir, 'Zh.dict.txt'))
+if os.path.exists(os.path.join(mod_dir, 'Zh.user.dict.txt')):
+    jieba.load_userdict(os.path.join(mod_dir, 'Zh.user.dict.txt'))
+
+aimlCorpusFea = {}
+aimlCorpus = {}
+for line in open(os.path.join(mod_dir, 'Zh.question.txt'),'r'):
+    lines = line.strip().split(',')
+    tmp = []
+    for i,j in enumerate(lines,0):
+        if i not in (0,1):
+            tmp.append(j)
+    aimlCorpusFea[lines[0]] = tmp
+    aimlCorpus[lines[0]] = lines[1]
+
 # -----------------------------------------------------------------------------
 def isChinese(c):
     # http://www.iteye.com/topic/558050
@@ -65,7 +80,7 @@ AIMLParser parse <bot name="name"> to BOT_NAME, so JieBa should process BOT_NAME
 #             szEng +=s
 #         elif bEng == False:
 #             lsCompile.append(s)
-#     # 
+#
 #     return lsCompile
 def processTag(seg_list):
     lsCompile = []
@@ -81,7 +96,7 @@ def processTag(seg_list):
                 lsCompile.append(s)
     except Exception as noBot:
         return seg_list
-    # 
+    #
     return lsCompile
 # -----------------------------------------------------------------------------
 def splitChinese(s):
@@ -133,6 +148,88 @@ def mergeChineseSpace(s):
     #marked = re.sub(r'__CH__\s+', ' ', marked)
     return marked.strip()
 
+def mapToAimlCorpus(questionInput):
+	hit = {}
+	for key in aimlCorpus:
+		hit[key] = 0
+		for tag in aimlCorpusFea[key]:
+			hit[key] += questionInput.count(tag)/len(questionInput)
 
-preprocess = lambda *args, **kwargs: ' '.join(splitChinese(*args, **kwargs))
-postprocess = lambda *args, **kwargs: mergeChineseSpace(*args, **kwargs)
+	output = ''
+	sorted_corpus = sorted(hit, key=hit.get, reverse=True)
+	if hit[sorted_corpus[0]] == 0:
+		output = questionInput
+	else:
+		output = aimlCorpus[sorted_corpus[0]]
+		words = pseg.cut(questionInput)
+		if sorted_corpus[0] in ('time','weather','height','capital','query','author','lang'):
+			for word,flag in words:
+				if flag[0] == 'n' and word not in aimlCorpusFea[sorted_corpus[0]]:
+					output = output.replace('*',word)
+			if sorted_corpus[0] in ('time','weather'):
+				output = output.replace('*','')
+		elif sorted_corpus[0] == 'who':
+			rules = ["n-u-n","n-u-x","n"]
+			tmp_w = []
+			tmp_f = []
+			for word,flag in words:
+				tmp_w.append(word)
+				tmp_f.append(flag[0])
+			tmp_af = '-'.join(tmp_f)
+			for rule in rules:
+				tmp_pos = tmp_af.find(rule)
+				if tmp_pos != -1:
+					tmp_pos = int(tmp_pos/2)
+					output = output.replace('*',''.join(tmp_w[int(tmp_pos):int(tmp_pos+(len(rule)+1)/2)]))
+					break
+		elif sorted_corpus[0] == 'joke':
+			output = aimlCorpus[sorted_corpus[0]]
+		elif sorted_corpus[0] in ('alarm','remind'):
+			num_keywords = ['一','二','兩','三','四','五','六','七','八','九','十']
+			timer_keywords = ['分鐘','小時','點']
+			period = ['早上','下午','晚上']
+			for t in timer_keywords:
+				tmp_pos = questionInput.find(t)
+				if tmp_pos != -1:
+					for i in range(tmp_pos-1,-1,-1):
+						if questionInput[i] not in num_keywords and i != tmp_pos-1:
+							output = output.replace('*',''.join(questionInput[i+1:tmp_pos+len(t)]))
+							for p in period:
+								if questionInput[0:i+1].find(p) != -1:
+									output = p + output
+									break
+							break
+						elif questionInput[i] not in num_keywords:
+							break
+						if i == 0:
+							output = output.replace('*',''.join(questionInput[0:tmp_pos+len(t)]))
+					if output.find('*') == -1:
+						break
+			if sorted_corpus[0] == 'remind':
+				for fea in aimlCorpusFea[sorted_corpus[0]]:
+					tmp_pos = questionInput.find(fea)
+					if tmp_pos != -1:
+						output = output.replace('-',''.join(questionInput[tmp_pos+len(fea):]))
+						break
+				output = output.replace('-','')
+	if output.find('*') != -1:
+		return ' '.join(jieba.cut(questionInput))
+	else:
+		return ' '.join(jieba.cut(output))
+
+preprocess = lambda line: mapToAimlCorpus(line)
+postprocess = lambda line: mergeChineseSpace(line)
+patternPreprocess = lambda line: ' '.join(splitChinese(line))
+
+if __name__ == '__main__':
+    import sys
+    try:
+        arg_fun = {'-p': patternPreprocess, '-o': postprocess, '-i': preprocess}
+        line = ' '.join(sys.argv[2:])
+        ret = arg_fun[sys.argv[1]](line)
+        print(ret)
+    except Exception as err:
+        print(err, file=sys.stderr)
+        print('{} -i 要給 preprocess 分析的句子'.format(sys.argv[0]), file=sys.stderr)
+        print('{} -o 要給 postprocess 分析的句子'.format(sys.argv[0]), file=sys.stderr)
+        print('{} -p 要給 patternPreprocess 分析的句子'.format(sys.argv[0]), file=sys.stderr)
